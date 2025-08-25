@@ -24,6 +24,8 @@
     }
     @supports (height:100dvh){body{height:100dvh;grid-template-rows:calc(100dvh - var(--hudH)) var(--hudH);}}
 
+    /* Envie d'un tacos 3 viande wallah j'ai trop faim */
+
     .stage{min-height:0;width:100vw;display:flex;align-items:center;justify-content:center;overflow:hidden}
     .stage img{max-height:100%;max-width:100%;width:auto;height:auto;object-fit:contain;display:block;-webkit-user-drag:none;user-select:none}
 
@@ -78,8 +80,8 @@
     // ---------------------- Scènes (SPA, audio différent par scène) ----------------------
     const SCENES = {
       start: {
-        image: 'couverture-2-1.png',
-        music: 'street-noise-24118.mp3',
+        image: 'Image/couverture-2-1.png',
+        music: 'Audio/street-noise-24118.mp3',
         lines: [
           "L'air est pesant.",
           "Malgré la profondeur de la nuit qui absorbe même les nuages environnants,",
@@ -97,8 +99,8 @@
         ]
       },
       lumiere: {
-        image: 'couverture-8-1.png',
-        music: 'sewer-drain-horror.mp3',
+        image: 'Image/couverture-8-1.png',
+        music: 'Audio/sewer-drain-horror.mp3',
         lines: ["La silhouette n'est pas familière, elle devient même menaçante malgré la distance qui vous sépare.",
          "Vous vous enfoncez donc sous terre par le biais de l'échelle d'une bouche d'égout à proximité.",
         "L'air y est fétide, plus vous y exposez et plus vous sentez votre corps s'adapter à ce milieu.",
@@ -114,8 +116,8 @@
                    { label: "Choix 2", next: 'dead', alt: true },]
       },
       ombre: {
-        image: 'couverture-20-1.png',
-        music: 'running-on-concrete-268478.mp3',
+        image: 'Image/couverture-20-1.png',
+        music: 'Audio/running-on-concrete-268478.mp3',
         lines: ['La silhouette prend la fuite comme si elle savait ce que vous êtes au-delà même de votre identité...', 
         "Tout ce que vous pouvez apercevoir est une aberration chromatique fuyante le long d'une route."
       ],
@@ -125,8 +127,8 @@
       },
     
       sortie: {
-        image: 'couverture-12-1.png',
-        music: 'horror-background-atmosphere-06-199279.mp3',
+        image: 'Image/couverture-12-1.png',
+        music: 'Audio/horror-background-atmosphere-06-199279.mp3',
         lines: ['À force de courir, votre vu se trouble.', 
         "Mais vous n'êtes pas fous !",
         "C'est bien une sortie !",
@@ -136,8 +138,8 @@
         choices: [ { label: 'Sortir', next: 'startbis', alt: true } ]
       },
       startbis: {
-        image: 'couverture-2-1.png',
-        music: 'street-noise-24118.mp3',
+        image: 'Image/couverture-2-1.png',
+        music: 'Audio/street-noise-24118.mp3',
         lines: [
           "Vous êtes à nouveau dans cette rue.",
           "Mais cette fois, vous savez que vous êtes cette silhouette indéterminée. ",
@@ -150,8 +152,8 @@
         ]
       },
       dead: {
-        image: 'gameover.png',
-        music: '8-bit-horror-noises-63944.mp3',
+        image: 'Image/gameover.png',
+        music: 'Audio/8-bit-horror-noises-63944.mp3',
         lines: ["Les mains vous rattrapent et vous sombrez dans l'abîme.", 
         "Vous pouvez recommencer une partie,",
         "Après tout la mort n'est qu'un concept ici bas...",
@@ -159,8 +161,8 @@
         choices: [ { label: 'Recommencer', next: 'start', alt: true } ]
       },
       poussiere: {
-        image: 'couverture-4-1.png',
-        music: 'horror-wind-308763.mp3',
+        image: 'Image/couverture-4-1.png',
+        music: 'Audio/horror-wind-308763.mp3',
         lines: ["La silhouette court mais elle s'essouffle avant vous, puisque vous vous êtes habituiez à cet air chaud étouffant.", 
         "Dans votre élan, vous essayez de l'attraper mais elle s'échappe entre vos doigts.",
         "Vous parvenez tout de même à l'effleurer, et ainsi fait, ",
@@ -172,8 +174,8 @@
       ]
       },
       tele: {
-        image: 'couverture-10-1.png',
-        music: 'soothing-white-noise-323619.mp3',
+        image: 'Image/couverture-10-1.png',
+        music: 'Audio/soothing-white-noise-323619.mp3',
         lines: ['Vous ne courez pas assez vite, le souffle vous manque.', 
         "Ainsi que vos repères :",
         "Le ciel s'éclaircit sans que le jour ne se lève.",
@@ -185,8 +187,8 @@
       ]
       },
       bercer: {
-        image: 'couverture-16-1.png',
-        music: '8-bit-horror-noises-63944.mp3',
+        image: 'Image/couverture-16-1.png',
+        music: 'Audio/8-bit-horror-noises-63944.mp3',
         lines: ["Le ciel ne s'éclaircit plus.", 
         "Des masses blanches hésitantes entre un état vaporeux et consistant viennent compléter la composition picturale de...",
         "votre mort ?"
@@ -195,8 +197,8 @@
       ]
       },
       interagir: {
-        image: 'couverture-6-1.png',
-        music: 'unsettled-233608.mp3',
+        image: 'Image/couverture-6-1.png',
+        music: 'Audio/unsettled-233608.mp3',
         lines: ['Vous touchez la poussière noire.', 
         "Elle se déforme instantanément au contact :",
         "elle s'évapore soudainement, teintant de nouveau le ciel de son obscurité première comme s'il n'avait jamais connu d'autres couleurs que celle de la nuit.",
@@ -211,8 +213,8 @@
       ]
       },
       machine: {
-        image: 'couverture-14-1.png',
-        music: 'unsettled-233608.mp3',
+        image: 'Image/couverture-14-1.png',
+        music: 'Audio/unsettled-233608.mp3',
         lines: ["Vous vous penchez vers l'appareil, et observez ce qu'il se trouve avant l'horizon.", 
         "Votre regard semble vide, perdu dans les ténèbres.",
         "Mais au loin, une trace de présence.",
@@ -288,14 +290,14 @@
     }
     const audioMgr = new AudioManager();
 
-    // Fallback: si WebAudio indisponible OU échec fetch (ex: file://), on utilise <audio>
+    // Fallback: si WebAudio indisponible OU échec fetch (ex: file://), utilise <audio>
     async function playViaHtmlAudio(url){
       try{
         if(!url) return;
         htmlAudio.pause();
         htmlAudio.src = url;
         htmlAudio.loop = true;
-        htmlAudio.muted = false; // on a un geste utilisateur
+        htmlAudio.muted = false; // trigger geste utilisateur 
         await htmlAudio.play();
       }catch(e){ console.error('HTMLAudio play failed', e); }
     }
@@ -306,7 +308,7 @@
 
     async function enableAudioOnce(scene){
       try{
-        // Essaye WebAudio → fallback <audio> si échec (CORS/file:// etc.)
+        // Try WebAudio → fallback <audio> si échec (CORS/file:// etc.)
         try { await audioMgr.play(scene.music); }
         catch (e) { await playViaHtmlAudio(scene.music); }
         localStorage.setItem(AUDIO_KEY, '1');
@@ -345,7 +347,7 @@
     }
 
     function typeLines(lines){
-  const beep = new Audio('bip.mp3');
+  const beep = new Audio('Audio/bip.mp3');
   beep.volume = 0.06;
   lineIdx = 0; textEl.textContent='';
 
@@ -421,13 +423,13 @@
     async function handleSceneAudio(scene){
       if(localStorage.getItem(AUDIO_KEY) === '1'){
         try{
-          // Préférence WebAudio, sinon fallback
+          // Préférence WebAudio sinon fallback
           await audioMgr.play(scene.music);
         }catch(e){
           await playViaHtmlAudio(scene.music);
         }
       } else {
-        // Pas encore autorisé → on précharge silencieusement via <audio>
+        // Pas encore autorisé → précharge silencieusement via <audio>
         try{ htmlAudio.src = scene.music; htmlAudio.load(); }catch{}
       }
     }
