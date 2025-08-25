@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Template: Image + Musique + Dialogue rétro + Choix</title>
+  <style>
+    :root{
+      --bg:#ffffff;           /* fond */
+      --ink:#0b0b0b;          /* texte principal */
+      --pane:#ffffff;         /* panneau de dialogue */
+      --pane-border:#111;     /* contour panneau */
+      --accent:#111;          /* boutons */
+      --accent-ink:#fff;      /* texte boutons */
+      --muted:#666;           /* sous-texte */
+      --radius:14px;          /* arrondi UI */
+      --shadow:0 16px 60px rgba(0,0,0,.15);
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%; margin:0; background:var(--bg); color:var(--ink)}
+    body{overflow:hidden}
+
+    /* Scène plein écran */
+    .stage{position:relative; height:100vh; width:100vw; display:grid; place-items:center;}
+    .stage img{max-width:100%; max-height:100%; object-fit:contain; display:block; user-select:none; -webkit-user-drag:none;}
+
+    /* Bandeau de dialogue façon rétro */
+    .hud{position:fixed; left:0; right:0; bottom:0; padding:12px 12px 16px; pointer-events:none;}
+    .dialog{
+      margin:0 auto; width:min(1100px, 100%);
+      background:var(--pane);
+      border:2px solid var(--pane-border);
+      border-radius:var(--radius);
+      box-shadow:var(--shadow);
+      padding:12px 14px 10px;
+      pointer-events:auto;
+    }
+    .name{font:700 12px/1 var(--mono); letter-spacing:.02em; color:var(--muted); margin:0 0 6px 2px}
+    .text{font:500 14px/1.4 var(--mono); min-height:3.2em; white-space:pre-wrap}
+    .caret{display:inline-block; width:8px; height:1.1em; translate:0 .15em; background:currentColor; animation:blink 1s steps(1,end) infinite}
+    @keyframes blink{50%{opacity:0}}
+
+    /* Zone boutons de choix */
+    .choices{display:grid; grid-template-columns:repeat(auto-fit, minmax(240px,1fr)); gap:10px; margin-top:10px}
+    .btn{appearance:none; border:2px solid var(--accent); background:var(--accent); color:var(--accent-ink); border-radius:12px; padding:12px 14px; cursor:pointer; font:700 14px/1 var(--mono); letter-spacing:.02em;}
+    .btn.alt{background:#fff; color:var(--accent);}
+    .btn:focus{outline:3px solid rgba(0,0,0,.2); outline-offset:2px}
+    .hint{margin-top:6px; font:400 11px/1 var(--mono); color:var(--muted)}
+
+    /* Bouton audio flottant */
+    .audio-toggle{position:fixed; right:12px; bottom:12px; background:rgba(0,0,0,.8); color:#fff; border:0; border-radius:999px; padding:10px 14px; font:600 13px/1 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; cursor:pointer; box-shadow:var(--shadow)}
+    .audio-toggle[aria-pressed="true"]{background:rgba(0,0,0,.95)}
+
+    /* Panneau d'autorisation audio (si autoplay bloqué) */
+    .gate{position:fixed; inset:0; background:rgba(255,255,255,.92); display:none; align-items:center; justify-content:center; text-align:center; padding:24px}
+    .gate-inner{max-width:520px; background:#fff; border:1px solid #e9e9e9; border-radius:16px; box-shadow:var(--shadow); padding:20px 24px}
+    .gate h2{margin:0 0 8px; font:700 20px/1.2 system-ui}
+    .gate p{margin:0 0 16px; color:#333}
+    .gate button{appearance:none; border:0; background:#111; color:#fff; border-radius:10px; padding:10px 14px; cursor:pointer; font-weight:700}
+  </style>
+</head>
+<body>
+  <!-- Image plein écran -->
+  <div class="stage" role="img" aria-label="Scène visuelle">
+    <img id="scene" src="couverture-2-1.png" alt="Scène" />
+  </div>
+
+  <!-- Audio de fond -->
+  <audio id="bgm" src="street-noise-24118.mp3" preload="auto" loop></audio>
+  <button id="audioToggle" class="audio-toggle" aria-pressed="false" aria-label="Activer le son">🔈 Son</button>
+
+  <!-- Bandeau de dialogue + choix -->
+  <div class="hud" aria-live="polite">
+    <div class="dialog">
+      <div class="name" id="speaker">NARRATEUR</div>
+      <div class="text" id="typeText"></div>
+      <div class="choices" id="choices" hidden>
+        <button class="btn" id="choiceA">▶ Choix A</button>
+        <button class="btn alt" id="choiceB">▶ Choix B</button>
+      </div>
+      <div class="hint" id="hint">Appuie sur Espace pour afficher tout le texte</div>
+    </div>
+  </div>
+
+  <!-- Panneau d'autorisation audio (si autoplay bloqué) -->
+  <div id="gate" class="gate" role="dialog" aria-modal="true" aria-labelledby="gateTitle">
+    <div class="gate-inner">
+      <h2 id="gateTitle">Activer le son</h2>
+      <p>Ton navigateur bloque la lecture automatique. Clique sur le bouton pour lancer la musique.</p>
+      <button id="gateBtn">▶️ Lancer la musique</button>
+    </div>
+  </div>
+
+  <script>
+  (function(){
+    // ---------------- Config scénario ----------------
+    const DIALOG_SPEED = 28; // ms par caractère (style rétro)
+    const LINES = [
+      "…Le vent se lève sur la ville endormie.",
+      "Une silhouette s'avance vers la place centrale…",
+      "Un choix s'impose."
+    ];
+    const CHOICES = {
+      a: { label: "Suivre l'ombre", action: () => location.href = '#ombre' },
+      b: { label: "Prendre la lumière", action: () => location.href = '#lumiere' },
+    };
+
+    // --------------- Sélecteurs & éléments ---------------
+    const textEl = document.getElementById('typeText');
+    const speakerEl = document.getElementById('speaker');
+    const choicesEl = document.getElementById('choices');
+    const choiceA = document.getElementById('choiceA');
+    const choiceB = document.getElementById('choiceB');
+    const hint = document.getElementById('hint');
+
+    const audio = document.getElementById('bgm');
+    const toggle = document.getElementById('audioToggle');
+    const gate = document.getElementById('gate');
+    const gateBtn = document.getElementById('gateBtn');
+
+    // --------------- Typewriter ----------------
+    let lineIdx = 0, charIdx = 0, typing = false, skip = false;
+
+    function setChoicesVisible(v){ choicesEl.hidden = !v; }
+
+    function setButtons(){
+      choiceA.textContent = `▶ ${CHOICES.a.label}`;
+      choiceB.textContent = `▶ ${CHOICES.b.label}`;
+      choiceA.onclick = CHOICES.a.action;
+      choiceB.onclick = CHOICES.b.action;
+    }
+
+    function typeLine(line){
+      typing = true; skip = false; hint.style.visibility = 'visible';
+      textEl.innerText = '';
+      charIdx = 0;
+      const tick = () => {
+        if (skip) { textEl.innerText = line; typing = false; hint.style.visibility = 'hidden'; showNext(); return; }
+        if (charIdx < line.length) {
+          textEl.innerText += line[charIdx++];
+          setTimeout(tick, DIALOG_SPEED);
+        } else {
+          typing = false; hint.style.visibility = 'hidden'; showNext();
+        }
+      };
+      tick();
+    }
+
+    function showNext(){
+      if (lineIdx < LINES.length - 1) {
+        lineIdx++; // passer à la ligne suivante après une courte pause
+        setTimeout(()=> typeLine(LINES[lineIdx]), 400);
+      } else {
+        // Fin du texte → afficher les choix
+        setChoicesVisible(true);
+      }
+    }
+
+    document.addEventListener('keydown', (e)=>{
+      if (e.key === ' ' || e.key === 'Spacebar') {
+        e.preventDefault();
+        if (typing) skip = true; // montre la ligne entière
+        else showNext();         // avance si la ligne est finie
+      }
+    });
+
+    // --------------- Audio (autoplay + toggle) ---------------
+    function setToggleState() {
+      const muted = audio.muted || audio.volume === 0 || audio.paused;
+      toggle.setAttribute('aria-pressed', String(!muted));
+      toggle.textContent = muted ? '🔇 Muet' : '🔊 Son';
+      toggle.setAttribute('aria-label', muted ? 'Activer le son' : 'Couper le son');
+    }
+
+    async function tryAutoplay() {
+      try {
+        audio.volume = 1.0; audio.muted = false; await audio.play();
+        gate.style.display = 'none';
+      } catch (e) {
+        gate.style.display = 'flex';
+      } finally { setToggleState(); }
+    }
+
+    toggle.addEventListener('click', async () => {
+      if (audio.paused) { try { await audio.play(); } catch(e) {} }
+      audio.muted = !audio.muted; setToggleState();
+    });
+
+    gateBtn.addEventListener('click', async () => {
+      try { audio.muted = false; await audio.play(); gate.style.display = 'none'; } catch (e) {}
+      setToggleState();
+    });
+
+    if (document.readyState === 'complete' || document.readyState === 'interactive') {
+      tryAutoplay();
+      // Démarrage du texte
+      typeLine(LINES[lineIdx]);
+      setButtons();
+    } else {
+      document.addEventListener('DOMContentLoaded', () => {
+        tryAutoplay();
+        typeLine(LINES[lineIdx]);
+        setButtons();
+      });
+    }
+
+    // --------------- Tests rapides (console) ---------------
+    (function runSmokeTests(){
+      const results = [];
+      const test = (name, fn)=>{ try{ fn(); results.push({test:name, ok:true}); }catch(e){ results.push({test:name, ok:false, msg:e.message}); } };
+      test('image présente', ()=> { if(!document.getElementById('scene').src) throw new Error('src manquant'); });
+      test('audio présent', ()=> { if(!audio) throw new Error('audio manquant'); });
+      test('2 choix configurés', ()=> { if(!CHOICES.a?.label || !CHOICES.b?.label) throw new Error('labels manquants'); });
+      console.table(results);
+    })();
+  })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Jeu images + musique (SPA) — Couverture & Scènes</title>
+  <style>
+    :root{
+      --bg:#000; --ink:#f2f2f2; --pane:rgba(0,0,0,.72); --pane-border:#222;
+      --accent:#fff; --accent-ink:#000; --muted:#bdbdbd;
+      --radius:14px; --shadow:0 16px 60px rgba(0,0,0,.4);
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Courier New", monospace;
+      --vh:1vh; --hudH:180px;
+    }
+    *{box-sizing:border-box;margin:0;padding:0}
+    html,body{height:100%;background:var(--bg);color:var(--ink);font-family:var(--mono)}
+    body{display:grid;grid-template-rows:calc(var(--vh)*100 - var(--hudH)) var(--hudH);overflow:hidden}
+    @supports(height:100dvh){body{grid-template-rows:calc(100dvh - var(--hudH)) var(--hudH)}}
+
+    .stage{display:flex;align-items:center;justify-content:center;overflow:hidden}
+    .stage img{max-width:100%;max-height:100%;object-fit:contain;-webkit-user-drag:none;user-select:none}
+
+    .hud{background:var(--pane);border-top:1px solid var(--pane-border);padding:12px;overflow:hidden}
+    .dialog{max-width:1100px;margin:0 auto}
+    .name{font-weight:700;color:var(--muted);margin-bottom:6px}
+    .text{min-height:3em;white-space:pre-wrap}
+    .choices{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px;margin-top:10px}
+    .btn{background:var(--accent);color:var(--accent-ink);border:none;border-radius:12px;padding:10px;cursor:pointer;font-weight:700}
+    .btn.alt{background:transparent;color:var(--accent);border:2px solid var(--accent)}
+
+    .gate{position:fixed;inset:0;background:rgba(0,0,0,.7);display:none;align-items:center;justify-content:center;z-index:10}
+    .gate-inner{background:#111;padding:20px;border-radius:16px;text-align:center;color:#fff;border:1px solid #222}
+    .gate button{appearance:none;border:0;background:#fff;color:#000;border-radius:10px;padding:10px 14px;cursor:pointer;font-weight:700}
+
+    .is-cover .hud{display:none}
+    .is-cover .stage{cursor:pointer}
+  </style>
+</head>
+<body>
+  <div class="stage"><img id="scene" alt="Scène" /></div>
+  <div class="hud" aria-live="polite">
+    <div class="dialog" id="dialog">
+      <div class="name" id="speaker">NARRATEUR</div>
+      <div class="text" id="typeText"></div>
+      <div class="choices" id="choices" hidden></div>
+    </div>
+  </div>
+
+  <audio id="bgm" preload="auto" loop muted></audio>
+
+  <div id="gate" class="gate" role="dialog" aria-modal="true" aria-labelledby="gateTitle">
+    <div class="gate-inner">
+      <h2 id="gateTitle">Activer le son</h2>
+      <p>Ton navigateur bloque la lecture automatique. Clique pour lancer la musique.</p>
+      <button id="gateBtn">▶️ Lancer la musique</button>
+    </div>
+  </div>
+  <script>
+    const AUDIO_KEY = 'audio-ok';
+    const audio = new Audio('musique-scene.mp3');
+    audio.loop = true;
+    
+    window.addEventListener('DOMContentLoaded', async () => {
+      if (localStorage.getItem(AUDIO_KEY) === '1') {
+        try { await audio.play(); } catch {}
+      } else {
+        document.getElementById('gate').style.display = 'flex';
+      }
+    });
+    </script>
+  <script>
+    (function(){
+      const SCENES = {
+        cover:  { image:'couverture-1-1.png',  music:'008466_sodiac-49363.mp3', hideHud:true,  proceedOnClick:true, next:'start' },
+        start:  { image:'couverture-2-1.png',  music:'street-noise-24118.mp3', lines:[ '…Le vent se lève sur la ville endormie.', "Une silhouette s'avance vers la place centrale…", "Un choix s'impose." ], choices:[ {label:'Suivre la silhouette', next:'ombre'}, {label:'Fuire sous terre', next:'lumiere', alt:true} ] },
+        ombre:  { image:'couverture-20-1.png', music:'running-on-concrete-268478.mp3', lines:[ "Tu avances dans l'ombre.", 'Le murmure grandit…' ], choices:[ {label:'Revenir', next:'start', alt:true} ] },
+        lumiere:{ image:'couverture-8-1.png',  music:'sewer-drain-horror.mp3',   lines:[ 'La lumière te réchauffe.', 'Une porte apparaît.' ], choices:[ {label:'Revenir', next:'start', alt:true} ] }
+      };
+
+      const imgEl = document.getElementById('scene');
+      const textEl = document.getElementById('typeText');
+      const choicesEl = document.getElementById('choices');
+      const htmlAudio = document.getElementById('bgm');
+      const gate = document.getElementById('gate');
+      const gateBtn = document.getElementById('gateBtn');
+
+      class AudioManager {
+        constructor(){ this.ctx=null; this.master=null; this.cache=new Map(); this.current=null; }
+        async unlock(){
+          if(!this.ctx){ const AC = window.AudioContext || window.webkitAudioContext; if(!AC) return false; this.ctx = new AC(); this.master = this.ctx.createGain(); this.master.connect(this.ctx.destination); }
+          if(this.ctx.state==='suspended') await this.ctx.resume();
+          return true;
+        }
+        async load(url){ if(this.cache.has(url)) return this.cache.get(url); const res = await fetch(url); const arr = await res.arrayBuffer(); const buf = await this.ctx.decodeAudioData(arr); this.cache.set(url, buf); return buf; }
+        async play(url, fade=0.6){
+          const ok = await this.unlock(); if(!ok) throw new Error('webaudio-unavailable');
+          const buf = await this.load(url);
+          const src = this.ctx.createBufferSource(); src.buffer = buf; src.loop = true;
+          const g = this.ctx.createGain(); g.gain.value = 0; src.connect(g); g.connect(this.master); src.start(0);
+          const now = this.ctx.currentTime; g.gain.setValueAtTime(0, now); g.gain.linearRampToValueAtTime(1, now+fade);
+          if(this.current){ const old = this.current; old.gain.linearRampToValueAtTime(0, now+fade); setTimeout(()=>{ try{ old.src.stop(); }catch{} }, fade*1000+60); }
+          this.current = { src, gain:g };
+        }
+      }
+      const audioMgr = new AudioManager();
+
+      async function tryPlay(scene){
+        try { await audioMgr.play(scene.music); return true; } catch {}
+        try { htmlAudio.src = scene.music; htmlAudio.loop = true; htmlAudio.muted = false; await htmlAudio.play(); return true; } catch {}
+        return false;
+      }
+
+      const AUDIO_KEY = 'audio-ok';
+      async function enableAudioOnce(scene){
+        const ok = await tryPlay(scene);
+        if(ok){ localStorage.setItem(AUDIO_KEY,'1'); gate.style.display='none'; }
+      }
+      gateBtn.addEventListener('click', ()=> enableAudioOnce(SCENES['cover']));
+
+      let cur='cover', lineIdx=0, typing=false, skip=false; const SPEED=80;
+      function renderChoices(scene){ choicesEl.innerHTML=''; (scene.choices||[]).forEach(ch=>{ const b=document.createElement('button'); b.className='btn'+(ch.alt?' alt':''); b.textContent='▶ '+ch.label; b.addEventListener('click', ()=> go(ch.next)); choicesEl.appendChild(b); }); choicesEl.hidden = !scene.choices || scene.choices.length===0; }
+      function typeLines(lines){ lineIdx=0; textEl.textContent=''; const next=()=>{ if(lineIdx>=lines.length){ renderChoices(SCENES[cur]); return; } typing=true; skip=false; textEl.textContent=''; let i=0; const s=lines[lineIdx]; const tick=()=>{ if(skip){ textEl.textContent=s; typing=false; lineIdx++; setTimeout(next,300); return; } if(i<s.length){ textEl.textContent+=s[i++]; setTimeout(tick, SPEED); } else { typing=false; lineIdx++; setTimeout(next,300); } }; tick(); }; next(); }
+
+      async function handleSceneAudio(scene){
+        const ok = await tryPlay(scene);
+        if(!ok && localStorage.getItem(AUDIO_KEY)!=='1'){ gate.style.display='flex'; }
+        else if(ok && localStorage.getItem(AUDIO_KEY)!=='1'){ localStorage.setItem(AUDIO_KEY,'1'); }
+      }
+      function applySceneLayout(scene){ document.body.classList.toggle('is-cover', !!scene.hideHud); }
+
+      async function go(id){
+        cur = (id in SCENES) ? id : 'cover';
+        const scene = SCENES[cur];
+        applySceneLayout(scene);
+        imgEl.src = scene.image;
+        await handleSceneAudio(scene);
+        if(scene.hideHud){ textEl.textContent=''; choicesEl.innerHTML=''; choicesEl.hidden=true; }
+        else { renderChoices(scene); typeLines(scene.lines||[]); }
+      }
+
+      document.querySelector('.stage').addEventListener('click', async ()=>{
+        const scene = SCENES[cur];
+        if(scene && scene.proceedOnClick && scene.next){
+          if(localStorage.getItem(AUDIO_KEY)!=='1'){ await enableAudioOnce(scene); }
+          go(scene.next);
+        }
+      });
+
+      function setVhVar(){ document.documentElement.style.setProperty('--vh', (window.innerHeight*0.01)+'px'); }
+      function setHudHeight(){ document.documentElement.style.setProperty('--hudH', (document.getElementById('dialog').getBoundingClientRect().height + 28) + 'px'); }
+      window.addEventListener('resize', ()=>{ setVhVar(); setHudHeight(); });
+
+      async function boot(){
+        setVhVar(); setHudHeight();
+        const scene = SCENES['cover'];
+        document.body.classList.add('is-cover');
+        imgEl.src = scene.image;
+        const ok = await tryPlay(scene);
+        if(!ok && localStorage.getItem(AUDIO_KEY)!=='1'){
+          gate.style.display='flex';
+        } else if(ok && localStorage.getItem(AUDIO_KEY)!=='1'){
+          localStorage.setItem(AUDIO_KEY,'1');
+        }
+        cur = 'cover';
+      }
+      if(document.readyState!=='loading') boot(); else document.addEventListener('DOMContentLoaded', boot);
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Image Responsive</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background-color: #111;
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+    }
+    .image-container {
+      width: 100%;
+      max-width: 1200px;
+      padding: 10px;
+    }
+    img {
+      width: 100%;
+      height: auto;
+      border-radius: 12px;
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <div class="image-container">
+    <img src="couverture-1-1.png" alt="Image Responsive" />
+  </div>
+</body>
+</html>

@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Image Responsive Plein Écran + Musique</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      background-color: #fff; /* Fond blanc demandé */
+    }
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden; /* évite tout scroll */
+    }
+    img {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+      border-radius: 12px;
+      display: block;
+      user-select: none;
+      -webkit-user-drag: none;
+    }
+    /* Bouton flottant mute/unmute */
+    .audio-toggle {
+      position: fixed;
+      right: 12px;
+      bottom: 12px;
+      background: rgba(0,0,0,0.75);
+      color: #fff;
+      border: none;
+      border-radius: 999px;
+      padding: 10px 14px;
+      font: 500 14px/1 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      cursor: pointer;
+    }
+    .audio-toggle[aria-pressed="true"] { background: rgba(0,0,0,0.9); }
+
+    /* Écran d'autorisation audio (si l'autoplay est bloqué) */
+    .gate {
+      position: fixed;
+      inset: 0;
+      background: rgba(255,255,255,0.9);
+      display: none; /* visible seulement si nécessaire */
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 24px;
+    }
+    .gate-inner {
+      max-width: 520px;
+      background: #fff;
+      border: 1px solid #e9e9e9;
+      border-radius: 16px;
+      box-shadow: 0 20px 60px rgba(0,0,0,.08);
+      padding: 20px 24px;
+      color: #111;
+    }
+    .gate h2 { margin: 0 0 8px; font-size: 20px; }
+    .gate p { margin: 0 0 16px; color: #444; }
+    .gate button {
+      appearance: none;
+      border: 0;
+      background: #111;
+      color: #fff;
+      border-radius: 10px;
+      padding: 10px 14px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+  <!-- Image en plein écran -->
+  <img src="couverture-1-1.png" alt="Image Responsive" />
+
+  <!-- Audio de fond (remplace src par ton fichier) -->
+  <!--
+    ⚠️ Autoplay audio peut être bloqué par le navigateur sans interaction.
+    On tente de lancer automatiquement; sinon on affiche un panneau avec un bouton.
+  -->
+  <audio id="bgm" src="008466_sodiac-49363.mp3" preload="auto" loop></audio>
+
+  <!-- Bouton flottant pour couper/activer le son -->
+  <button id="audioToggle" class="audio-toggle" aria-pressed="false" aria-label="Activer le son">🔈 Son</button>
+
+  <!-- Panneau d'autorisation si l'autoplay est bloqué -->
+  <div id="gate" class="gate" role="dialog" aria-modal="true" aria-labelledby="gateTitle">
+    <div class="gate-inner">
+      <h2 id="gateTitle">Activer le son</h2>
+      <p>Ton navigateur bloque la lecture automatique. Clique sur le bouton pour lancer la musique.</p>
+      <button id="gateBtn">▶️ Lancer la musique</button>
+    </div>
+  </div>
+
+  <script>
+    (function(){
+      const audio = document.getElementById('bgm');
+      const toggle = document.getElementById('audioToggle');
+      const gate = document.getElementById('gate');
+      const gateBtn = document.getElementById('gateBtn');
+
+      function setToggleState() {
+        const muted = audio.muted || audio.volume === 0 || audio.paused;
+        toggle.setAttribute('aria-pressed', String(!muted));
+        toggle.textContent = muted ? '🔇 Muet' : '🔊 Son';
+        toggle.setAttribute('aria-label', muted ? 'Activer le son' : 'Couper le son');
+      }
+
+      async function tryAutoplay() {
+        try {
+          audio.volume = 1.0;
+          audio.muted = false;
+          await audio.play();
+          gate.style.display = 'none';
+        } catch (e) {
+          // Autoplay bloqué → afficher le panneau
+          gate.style.display = 'flex';
+        } finally {
+          setToggleState();
+        }
+      }
+
+      // Toggle mute/unmute + play si nécessaire
+      toggle.addEventListener('click', async () => {
+        if (audio.paused) {
+          try { await audio.play(); } catch(e) {}
+        }
+        audio.muted = !audio.muted;
+        setToggleState();
+      });
+
+      // Bouton du panneau d'autorisation
+      gateBtn.addEventListener('click', async () => {
+        try {
+          audio.muted = false;
+          await audio.play();
+          gate.style.display = 'none';
+        } catch (e) {
+          // Ignorer; l'utilisateur peut réessayer
+        }
+        setToggleState();
+      });
+
+      // Essai d'autoplay à l'ouverture de la page
+      if (document.readyState === 'complete' || document.readyState === 'interactive') {
+        tryAutoplay();
+      } else {
+        document.addEventListener('DOMContentLoaded', tryAutoplay);
+      }
+    })();
+  </script>
+</body>
+</html>

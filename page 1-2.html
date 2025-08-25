@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Jeu images + musique (SPA, audio par scène sans reprompt)</title>
+  <style>
+    :root{
+      --bg:#000; --ink:#f2f2f2; --pane:rgba(0,0,0,.72); --pane-border:#222;
+      --accent:#fff; --accent-ink:#000; --muted:#bdbdbd;
+      --radius:14px; --shadow:0 16px 60px rgba(0,0,0,.4);
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Courier New", monospace;
+      --vh:1vh; --hudH:180px;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%;margin:0;background:var(--bg);color:var(--ink)}
+
+    /* Layout sans scroll: viewport = scène + HUD (hauteur mesurée) */
+    body{
+      height:calc(var(--vh)*100);
+      display:grid;
+      grid-template-rows: calc(var(--vh)*100 - var(--hudH)) var(--hudH);
+      overflow:hidden;
+    }
+    @supports (height:100dvh){body{height:100dvh;grid-template-rows:calc(100dvh - var(--hudH)) var(--hudH);}}
+
+    .stage{min-height:0;width:100vw;display:flex;align-items:center;justify-content:center;overflow:hidden}
+    .stage img{max-height:100%;max-width:100%;width:auto;height:auto;object-fit:contain;display:block;-webkit-user-drag:none;user-select:none}
+
+    .hud{height:var(--hudH);overflow:hidden;padding:12px 12px max(16px, env(safe-area-inset-bottom))}
+    .dialog{margin:0 auto;width:min(1100px,100%);background:var(--pane);border:1px solid var(--pane-border);border-radius:var(--radius);box-shadow:var(--shadow);padding:12px 14px 10px;backdrop-filter:saturate(1.1) blur(3px)}
+    .name{font:700 12px/1 var(--mono);letter-spacing:.02em;color:var(--muted);margin:0 0 6px 2px}
+    .text{font:500 14px/1.45 var(--mono);min-height:3.2em;white-space:pre-wrap}
+    .bar{display:flex;gap:10px;align-items:center;justify-content:space-between;margin-top:10px}
+    .choices{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px}
+    .btn{appearance:none;border:2px solid var(--accent);background:var(--accent);color:var(--accent-ink);border-radius:12px;padding:12px 14px;cursor:pointer;font:700 14px/1 var(--mono)}
+    .btn.alt{background:transparent;color:var(--accent)}
+    .hint{font:400 11px/1 var(--mono);color:var(--muted)}
+
+    /* Gate (première interaction pour démuter) */
+    .gate{position:fixed;inset:0;background:rgba(0,0,0,.7);display:none;align-items:center;justify-content:center;text-align:center;padding:24px}
+    .gate-inner{max-width:520px;background:#0f0f0f;border:1px solid #222;border-radius:16px;box-shadow:var(--shadow);padding:20px 24px;color:#fff}
+    .gate button{appearance:none;border:0;background:#fff;color:#000;border-radius:10px;padding:10px 14px;cursor:pointer;font-weight:700}
+  </style>
+</head>
+<body>
+  <!-- Scène (image toujours entière) -->
+  <div class="stage"><img id="scene" alt="Scène" /></div>
+
+  <!-- HUD (dialogue + choix) -->
+  <div class="hud" aria-live="polite">
+    <div class="dialog" id="dialog">
+      <div class="name" id="speaker">NARRATEUR</div>
+      <div class="text" id="typeText"></div>
+      <div class="bar">
+        <div class="choices" id="choices" hidden></div>
+        <div style="display:flex;gap:10px;align-items:center">
+          <div class="hint" id="hint">[▶] = afficher la ligne / avancer</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Fallback <audio> (non prioritaire, on utilise WebAudio) -->
+  <audio id="bgm" preload="auto" loop muted></audio>
+
+  <!-- Gate si besoin d'interaction -->
+  <div id="gate" class="gate" role="dialog" aria-modal="true" aria-labelledby="gateTitle">
+    <div class="gate-inner">
+      <h2 id="gateTitle">Activer le son</h2>
+      <p>Un clic suffit pour activer la musique pour toute la session.</p>
+      <button id="gateBtn">▶️ Lancer la musique</button>
+    </div>
+  </div>
+
+  <script>
+  (function(){
+    // ---------------------- Scènes (SPA, audio différent par scène) ----------------------
+    const SCENES = {
+      start: {
+        image: 'couverture-2-1.png',
+        music: 'street-noise-24118.mp3',
+        lines: [
+          "L'air est pesant.",
+          "Malgré la profondeur de la nuit qui absorbe même les nuages environnants,",
+          "il était simple de deviner qu'un orage aurait bientôt lieu.",
+          'Puis mes yeux se détachèrent de la nuit et retombèrent sur le sol de béton ',
+          "J'étais ici.",
+          "Présent, parmi l'épileptique mouvement des lumières berçant les rues d'été.",
+          'Mon souffle se prit au jeu de cette arythmie du paysage.',
+          "C'est pendant l'enchaînement de ce spectacle que je la vis :",
+          'La silhouette'
+        ],
+        choices: [
+          { label: "Suivre la silouhette", next: 'ombre' },
+          { label: "Fuire sous terre", next: 'lumiere', alt: true },
+        ]
+      },
+      lumiere: {
+        image: 'couverture-8-1.png',
+        music: 'sewer-drain-horror.mp3',
+        lines: ["La silhouette n'est pas familière, elle devient même menaçante malgré la distance qui vous sépare.",
+         "Vous vous enfoncez donc sous terre par le biais de l'échelle d'une bouche d'égout à proximité.",
+        "L'air y est fétide, plus vous y exposez et plus vous sentez votre corps s'adapter à ce milieu.",
+        'Vous êtes soudainement pris de migraine.',
+        'Et par manque de tomber, vous tentez de vous rattraper au mur.',
+        'Malheur à vous !',
+        'Votre main traverse le mur. Suivi de tout votre corps !',
+        'Vous êtes pris au piège !',
+        'Vous devenez la silhouette fuit précédemment.',
+        "Des mains de craie s'élancent vers vous : ne les laissez pas attraper !"
+        ],
+        choices: [ { label: 'Choix 1', next: 'sortie', alt: true },
+                   { label: "Choix 2", next: 'dead', alt: true },]
+      },
+      ombre: {
+        image: 'couverture-20-1.png',
+        music: 'running-on-concrete-268478.mp3',
+        lines: ['La silhouette prend la fuite comme si elle savait ce que vous êtes au-delà même de votre identité...', 
+        "Tout ce que vous pouvez apercevoir est une aberration chromatique fuyante le long d'une route."
+      ],
+        choices: [ { label: 'Choix 1', next: 'poussiere', alt: true } ,
+                   { label: 'Choix 2', next: 'tele', alt: true }
+      ]
+      },
+    
+      sortie: {
+        image: 'couverture-12-1.png',
+        music: 'horror-background-atmosphere-06-199279.mp3',
+        lines: ['À force de courir, votre vu se trouble.', 
+        "Mais vous n'êtes pas fous !",
+        "C'est bien une sortie !",
+        'Absorbé par la profondeur de la nuit,',
+        'vous vous précipitez et manquez de peu de trébucher sur quelques marches.',
+      ],
+        choices: [ { label: 'Sortir', next: 'startbis', alt: true } ]
+      },
+      startbis: {
+        image: 'couverture-2-1.png',
+        music: 'street-noise-24118.mp3',
+        lines: [
+          "Vous êtes à nouveau dans cette rue.",
+          "Mais cette fois, vous savez que vous êtes cette silhouette indéterminée. ",
+          "Et pas peur de causer plus de dommage, vous fuyez sans vous retourner :",
+          "Cela vous prendra la nuit pour y croire.",
+          "Fin - la boucle précipitée"
+        ],
+        choices: [
+          { label: "Recommencer", next: 'start' },
+        ]
+      },
+      dead: {
+        image: 'gameover.png',
+        music: '8-bit-horror-noises-63944.mp3',
+        lines: ["Les mains vous rattrapent et vous sombrez dans l'abîme.", 
+        "Vous pouvez recommencer une partie,",
+        "Après tout la mort n'est qu'un concept ici bas...",
+      ],
+        choices: [ { label: 'Recommencer', next: 'start', alt: true } ]
+      },
+      poussiere: {
+        image: 'couverture-4-1.png',
+        music: 'horror-wind-308763.mp3',
+        lines: ["La silhouette court mais elle s'essouffle avant vous, puisque vous vous êtes habituiez à cet air chaud étouffant.", 
+        "Dans votre élan, vous essayez de l'attraper mais elle s'échappe entre vos doigts.",
+        "Vous parvenez tout de même à l'effleurer, et ainsi fait, ",
+        "une forme inconnue s'élève dans les cieux, aspirant la noirceur de la nuit.",
+        "Ce manifeste du vide se déplace, sous forme de poussière, au gré du léger vent sec."
+      ],
+        choices: [ { label: 'Souhaitez-vous observer passivement le spectacle ?', next: 'bercer', alt: true } ,
+                   { label: "Souhaitez-vous interagir avec l'objet flottant ?", next: 'interagir', alt: true }
+      ]
+      },
+      tele: {
+        image: 'couverture-10-1.png',
+        music: 'soothing-white-noise-323619.mp3',
+        lines: ['Vous ne courez pas assez vite, le souffle vous manque.', 
+        "Ainsi que vos repères :",
+        "Le ciel s'éclaircit sans que le jour ne se lève.",
+        'Vous avez perdu la silhouette de vue.'
+
+      ],
+        choices: [ { label: 'Souhaitez-vous descendre dans le souterrain ?', next: 'lumiere', alt: true } ,
+                   { label: "Choisissez-vous de vous laisser bercer par la nouvelle élaircie d'une télévision VHS ?", next: 'bercer', alt: true }
+      ]
+      },
+      bercer: {
+        image: 'couverture-16-1.png',
+        music: '8-bit-horror-noises-63944.mp3',
+        lines: ["Le ciel ne s'éclaircit plus.", 
+        "Des masses blanches hésitantes entre un état vaporeux et consistant viennent compléter la composition picturale de...",
+        "votre mort ?"
+      ],
+        choices: [ { label: 'Recommencer', next: 'start', alt: true } ,
+      ]
+      },
+      interagir: {
+        image: 'couverture-6-1.png',
+        music: 'unsettled-233608.mp3',
+        lines: ['Vous touchez la poussière noire.', 
+        "Elle se déforme instantanément au contact :",
+        "elle s'évapore soudainement, teintant de nouveau le ciel de son obscurité première comme s'il n'avait jamais connu d'autres couleurs que celle de la nuit.",
+        "Entre les ombres, vous discernez une ligne, inatteignable.",
+        "En la suivant du regard, vous vous rendez compte que vous n'êtes pas seul à fixer cette dernière.",
+        'Non.',
+        "Ce n'est pas l'étrange écho de vous-même sous forme de silhouette.",
+        'Mais une machine de vision.'
+      ],
+        choices: [ { label: 'Utiliser la machine', next: 'machine', alt: true } 
+        
+      ]
+      },
+      machine: {
+        image: 'couverture-14-1.png',
+        music: 'unsettled-233608.mp3',
+        lines: ["Vous vous penchez vers l'appareil, et observez ce qu'il se trouve avant l'horizon.", 
+        "Votre regard semble vide, perdu dans les ténèbres.",
+        "Mais au loin, une trace de présence.",
+        "À cette vue, tout votre corps se fige : vous ne pouvez détourner les yeux.",
+        "Devant vous se dresse la représentation de ██████."
+
+      ],
+        choices: [ { label: 'Recommencer', next: 'start', alt: true } ,
+      ]
+      }
+
+    };
+
+    // ---------------------- Sélecteurs ----------------------
+    const imgEl = document.getElementById('scene');
+    const dialog = document.getElementById('dialog');
+    const textEl = document.getElementById('typeText');
+    const choicesEl = document.getElementById('choices');
+    const hint = document.getElementById('hint');
+
+    const htmlAudio = document.getElementById('bgm');
+    const gate = document.getElementById('gate');
+    const gateBtn = document.getElementById('gateBtn');
+
+    // ---------------------- Audio Manager (Web Audio) ----------------------
+    class AudioManager{
+      constructor(){ this.ctx=null; this.cache=new Map(); this.current=null; this.master=null; }
+      async unlock(){
+        if(!this.ctx){
+          const AC = window.AudioContext || window.webkitAudioContext;
+          if(!AC) return false;
+          this.ctx = new AC();
+          this.master = this.ctx.createGain();
+          this.master.gain.value = 1;
+          this.master.connect(this.ctx.destination);
+        }
+        if(this.ctx.state === 'suspended') await this.ctx.resume();
+        return true;
+      }
+      async load(url){
+        if(this.cache.has(url)) return this.cache.get(url);
+        const res = await fetch(url);
+        if(!res.ok) throw new Error('fetch audio failed: '+url);
+        const arr = await res.arrayBuffer();
+        const buf = await this.ctx.decodeAudioData(arr);
+        this.cache.set(url, buf);
+        return buf;
+      }
+      async play(url, fade=0.6){
+        if(!url) return;
+        const ok = await this.unlock();
+        if(!ok) throw new Error('WebAudio unsupported');
+        const buf = await this.load(url);
+        const src = this.ctx.createBufferSource();
+        src.buffer = buf; src.loop = true;
+        const g = this.ctx.createGain(); g.gain.value = 0; // start silent
+        src.connect(g); g.connect(this.master); src.start(0);
+
+        const now = this.ctx.currentTime;
+        g.gain.cancelScheduledValues(now);
+        g.gain.setValueAtTime(0, now);
+        g.gain.linearRampToValueAtTime(1, now + fade);
+
+        if(this.current){
+          const old = this.current; const og = old.gain; const os = old.src;
+          og.gain.cancelScheduledValues(now);
+          og.gain.setValueAtTime(og.gain.value, now);
+          og.gain.linearRampToValueAtTime(0, now + fade);
+          setTimeout(()=>{ try{ os.stop(); }catch{} }, fade*1000 + 80);
+        }
+        this.current = { src, gain: g };
+      }
+    }
+    const audioMgr = new AudioManager();
+
+    // Fallback: si WebAudio indisponible OU échec fetch (ex: file://), on utilise <audio>
+    async function playViaHtmlAudio(url){
+      try{
+        if(!url) return;
+        htmlAudio.pause();
+        htmlAudio.src = url;
+        htmlAudio.loop = true;
+        htmlAudio.muted = false; // on a un geste utilisateur
+        await htmlAudio.play();
+      }catch(e){ console.error('HTMLAudio play failed', e); }
+    }
+
+    // Première autorisation une seule fois
+    const AUDIO_KEY = 'audio-ok';
+    const audioOk = localStorage.getItem(AUDIO_KEY) === '1';
+
+    async function enableAudioOnce(scene){
+      try{
+        // Essaye WebAudio → fallback <audio> si échec (CORS/file:// etc.)
+        try { await audioMgr.play(scene.music); }
+        catch (e) { await playViaHtmlAudio(scene.music); }
+        localStorage.setItem(AUDIO_KEY, '1');
+        gate.style.display='none';
+      } finally {
+        window.removeEventListener('pointerdown', unlockOnGesture);
+        window.removeEventListener('keydown', unlockOnGesture);
+      }
+    }
+
+    function unlockOnGesture(){ enableAudioOnce(SCENES[cur]); }
+
+    if(!audioOk){ gate.style.display='flex'; }
+    gateBtn?.addEventListener('click', ()=> enableAudioOnce(SCENES['start']));
+    window.addEventListener('pointerdown', unlockOnGesture, { once:false });
+    window.addEventListener('keydown', unlockOnGesture, { once:false });
+
+    // ---------------------- Mesure HUD + vh ----------------------
+    function setVhVar(){ const vh = window.innerHeight * 0.01; document.documentElement.style.setProperty('--vh', vh + 'px'); }
+    function setHudHeight(){ const h = Math.ceil(dialog.getBoundingClientRect().height + 12 + 16); document.documentElement.style.setProperty('--hudH', h + 'px'); }
+
+    // ---------------------- Router (SPA) ----------------------
+    let cur = 'start', lineIdx=0, typing=false, skip=false; const SPEED=40;
+
+    function renderChoices(scene){
+      choicesEl.innerHTML = '';
+      (scene.choices||[]).forEach(ch => {
+        const b = document.createElement('button');
+        b.className = 'btn' + (ch.alt ? ' alt':'');
+        b.textContent = (ch.alt? '▶ ':'▶ ') + ch.label;
+        b.addEventListener('click', ()=> go(ch.next));
+        choicesEl.appendChild(b);
+      });
+      choicesEl.hidden = !scene.choices || scene.choices.length===0;
+      setHudHeight();
+    }
+
+    function typeLines(lines){
+  const beep = new Audio('bip.mp3');
+  beep.volume = 0.06;
+  lineIdx = 0; textEl.textContent='';
+
+  let nextBtn = document.getElementById('nextBtn');
+  if(!nextBtn){
+    nextBtn = document.createElement('button');
+    nextBtn.id = 'nextBtn';
+    nextBtn.textContent = '▶';
+    nextBtn.className = 'btn';
+    nextBtn.style.marginTop = '8px';
+    nextBtn.style.maxWidth = '100%';
+    nextBtn.style.boxSizing = 'border-box';
+    dialog.querySelector('.bar').appendChild(nextBtn);
+  }
+  nextBtn.style.display = 'inline-block';
+
+  const next = () => {
+    if (lineIdx >= lines.length){
+      nextBtn.style.display = 'none';
+      renderChoices(SCENES[cur]);
+      return;
+    }
+    typing = true; skip=false; hint.style.visibility='visible'; textEl.textContent='';
+    let i=0; const s = lines[lineIdx];
+    let charCount = 0;
+    const tick=()=>{
+      setHudHeight();
+      if (skip){ textEl.textContent=s; typing=false; hint.style.visibility='hidden'; proceedOrShowButton(); return; }
+      if (i < s.length){
+        textEl.textContent += s[i];
+        if (/\w/.test(s[i])) { // seulement lettres/chiffres
+  charCount++;
+  if (charCount % 2 === 0) { // toutes les 2 lettres
+    try {
+      beep.currentTime = 0;
+      beep.play();
+    } catch {}
+  }
+}
+        i++;
+        setTimeout(tick, SPEED);
+      }
+      else { typing=false; hint.style.visibility='hidden'; proceedOrShowButton(); }
+    };
+    tick();
+  };
+
+  function proceedOrShowButton(){
+    nextBtn.style.display = 'inline-block';
+    nextBtn.onclick = () => {
+      if (typing) {
+        skip = true; // Affiche toute la phrase directement
+      } else {
+        lineIdx++;
+        next();
+      }
+    };
+  }
+
+  document.addEventListener('keydown', function advance(e){
+    if (typing && (e.key===' ' || e.key==='Spacebar')){
+      skip = true;
+    } else if (!typing && (e.key===' ' || e.key==='Spacebar')){
+      document.removeEventListener('keydown', advance);
+      lineIdx++;
+      next();
+    }
+  });
+
+  next();
+}
+
+    async function handleSceneAudio(scene){
+      if(localStorage.getItem(AUDIO_KEY) === '1'){
+        try{
+          // Préférence WebAudio, sinon fallback
+          await audioMgr.play(scene.music);
+        }catch(e){
+          await playViaHtmlAudio(scene.music);
+        }
+      } else {
+        // Pas encore autorisé → on précharge silencieusement via <audio>
+        try{ htmlAudio.src = scene.music; htmlAudio.load(); }catch{}
+      }
+    }
+
+    function go(id){
+      cur = id in SCENES ? id : 'start';
+      const scene = SCENES[cur];
+      imgEl.src = scene.image;
+      handleSceneAudio(scene);
+      //renderChoices(scene); // reset choices (hidden until end of lines)
+      choicesEl.innerHTML = '';
+      choicesEl.hidden = true;
+      typeLines(scene.lines||[]);
+    }
+
+    document.addEventListener('keydown', (e)=>{
+      if (e.key===' ' || e.key==='Spacebar'){ e.preventDefault(); if (typing) skip=true; }
+    });
+
+    // Boot
+    function boot(){ setVhVar(); setHudHeight(); go('start'); }
+    if (document.readyState==='complete' || document.readyState==='interactive') boot(); else document.addEventListener('DOMContentLoaded', boot);
+    window.addEventListener('resize', ()=>{ setVhVar(); setHudHeight(); });
+    if (window.visualViewport){ window.visualViewport.addEventListener('resize', ()=>{ setVhVar(); setHudHeight(); }); }
+  })();
+  </script>
+</body>
+</html>
