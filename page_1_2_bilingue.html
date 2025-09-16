@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Un récit dont vous êtes le héros</title>
+  <link rel="icon" type="image/png" href="Image/favicon.png">
+  <style>
+    :root{
+      --bg:#000; --ink:#f2f2f2; --pane:rgba(0,0,0,.72); --pane-border:#222;
+      --accent:#fff; --accent-ink:#000; --muted:#bdbdbd;
+      --radius:14px; --shadow:0 16px 60px rgba(0,0,0,.4);
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Courier New", monospace;
+      --vh:1vh; --hudH:180px;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%;margin:0;background:var(--bg);color:var(--ink)}
+
+    /* Layout sans scroll: viewport = scène + HUD (hauteur mesurée) */
+    body{
+      height:calc(var(--vh)*100);
+      display:grid;
+      grid-template-rows: calc(var(--vh)*100 - var(--hudH)) var(--hudH);
+      overflow:hidden;
+      font-family: var(--mono);
+    }
+    @supports (height:100dvh){body{height:100dvh;grid-template-rows:calc(100dvh - var(--hudH)) var(--hudH);}}
+
+    .stage{min-height:0;width:100vw;display:flex;align-items:center;justify-content:center;overflow:hidden}
+    .stage img{max-height:100%;max-width:100%;width:auto;height:auto;object-fit:contain;display:block;-webkit-user-drag:none;user-select:none}
+
+    .hud{height:var(--hudH);overflow:hidden;padding:12px 12px max(16px, env(safe-area-inset-bottom))}
+    .dialog{margin:0 auto;width:min(1100px,100%);background:var(--pane);border:1px solid var(--pane-border);border-radius:var(--radius);box-shadow:var(--shadow);padding:12px 14px 10px;backdrop-filter:saturate(1.1) blur(3px)}
+    .name{font:700 12px/1 var(--mono);letter-spacing:.02em;color:var(--muted);margin:0 0 6px 2px}
+    .text{font:500 14px/1.45 var(--mono);min-height:3.2em;white-space:pre-wrap}
+    .bar{display:flex;gap:10px;align-items:center;justify-content:space-between;margin-top:10px;flex-wrap:wrap}
+    .choices{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px}
+    .btn{appearance:none;border:2px solid var(--accent);background:var(--accent);color:var(--accent-ink);border-radius:12px;padding:12px 14px;cursor:pointer;font:700 14px/1 var(--mono)}
+    .btn.alt{background:transparent;color:var(--accent)}
+    .hint{font:400 11px/1 var(--mono);color:var(--muted)}
+
+    /* Gate (première interaction pour démuter) */
+    .gate{position:fixed;inset:0;background:rgba(0,0,0,.7);display:none;align-items:center;justify-content:center;text-align:center;padding:24px}
+    .gate-inner{max-width:520px;background:#0f0f0f;border:1px solid #222;border-radius:16px;box-shadow:var(--shadow);padding:20px 24px;color:#fff}
+    .gate button{appearance:none;border:0;background:#fff;color:#000;border-radius:10px;padding:10px 14px;cursor:pointer;font-weight:700}
+
+    /* Lang switch */
+    #langSwitch .btn{padding:8px 10px}
+  </style>
+</head>
+<body>
+  <!-- Scène (image toujours entière) -->
+  <div class="stage"><img id="scene" alt="Scène" /></div>
+
+  <!-- HUD (dialogue + choix) -->
+  <div class="hud" aria-live="polite">
+    <div class="dialog" id="dialog">
+      <div class="name" id="speaker">NARRATEUR</div>
+      <div class="text" id="typeText"></div>
+      <div class="bar">
+        <div class="choices" id="choices" hidden></div>
+        <div style="display:flex;gap:10px;align-items:center">
+          <div class="hint" id="hint">[▶] = afficher la ligne / avancer</div>
+          <div id="langSwitch" style="display:flex; gap:8px; align-items:center; margin-left:auto;">
+            <button id="btnFR" class="btn alt">🇫🇷 FR</button>
+            <button id="btnEN" class="btn alt">🇬🇧 EN</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Fallback <audio> (non prioritaire, on utilise WebAudio) -->
+  <audio id="bgm" preload="auto" loop muted></audio>
+
+  <!-- Gate si besoin d'interaction -->
+  <div id="gate" class="gate" role="dialog" aria-modal="true" aria-labelledby="gateTitle">
+    <div class="gate-inner">
+      <h2 id="gateTitle">Activer le son</h2>
+      <p>Un clic suffit pour activer la musique pour toute la session.</p>
+      <button id="gateBtn">▶️ Lancer la musique</button>
+    </div>
+  </div>
+
+  <script>
+  (function(){
+    // ---------------------- Scènes bilingues (FR/EN) ----------------------
+    const SCENES = {
+      start: {
+        image: 'Image/couverture-2-1.png',
+        music: 'Audio/street-noise-24118.mp3',
+        lines: {
+          fr: [
+            "L'air est pesant.",
+            "Malgré la profondeur de la nuit qui absorbe même les nuages environnants,",
+            "il était simple de deviner qu'un orage aurait bientôt lieu.",
+            'Puis mes yeux se détachèrent de la nuit et retombèrent sur le sol de béton :',
+            "J'étais ici.",
+            "Présent, parmi l'épileptique mouvement des lumières berçant les rues d'été.",
+            'Mon souffle se prit au jeu de cette arythmie du paysage.',
+            "C'est pendant l'enchaînement de ce spectacle que je la vis :",
+            'La silhouette'
+          ],
+          en: [
+            'The air is heavy.',
+            'Despite the depth of the night which absorbs even the surrounding clouds,',
+            'it was easy to guess that a storm would soon occur.',
+            'My eyes tore away from the night and fell back onto the concrete floor:',
+            'I was here.',
+            'Present among the epileptic movement of lights rocking the summer streets.',
+            "My breath caught in the play of this arrhythmia's landscape.",
+            'It was during the sequence of this show that I saw her:',
+            'The silhouette'
+          ]
+        },
+        choices: [
+          { label: { fr: 'Suivre la silhouette', en: 'Follow the silhouette' }, next: 'ombre' },
+          { label: { fr: 'Fuir sous terre', en: 'Flee underground' }, next: 'lumiere', alt: true }
+        ]
+      },
+      lumiere: {
+        image: 'Image/couverture-8-1.png',
+        music: 'Audio/sewer-drain-horror.mp3',
+        lines: {
+          fr: [
+            "La silhouette n'est pas familière, elle devient même menaçante malgré la distance qui vous sépare.",
+            "Vous vous enfoncez donc sous terre par le biais de l'échelle d'une bouche d'égout à proximité.",
+            "L'air y est fétide, plus vous y exposez et plus vous sentez votre corps s'adapter à ce milieu.",
+            'Vous êtes soudainement pris de migraine.',
+            'Et par manque de tomber, vous tentez de vous rattraper au mur.',
+            'Malheur à vous !',
+            'Votre main traverse le mur. Suivi de tout votre corps !',
+            'Vous êtes pris au piège !',
+            'Vous devenez la silhouette fuit précédemment.',
+            "Des mains de craie s'élancent vers vous : ne les laissez pas vous attraper !"
+          ],
+          en: [
+            'A bad feeling seizes you: the silhouette is unfamiliar,',
+            'it even becomes threatening despite the distance that separates you.',
+            'So you descend underground via the ladder of a nearby manhole.',
+            'The air is fetid. The more you expose yourself to it, the more you feel your body adapting to this environment.',
+            'You suddenly feel dizzy!',
+            "And for lack of falling, you're trying to catch yourself on the wall.",
+            'Woe to you!',
+            'Your hand goes through the wall! Then your whole body!',
+            'You are trapped!',
+            'You become the silhouette you fled from earlier. Chalk hands reach out to you: do not let them catch you!'
+          ]
+        },
+        choices: [
+          { label: { fr: 'Choix 1', en: 'Choice 1' }, next: 'sortie', alt: true },
+          { label: { fr: 'Choix 2', en: 'Choice 2' }, next: 'dead', alt: true }
+        ]
+      },
+      ombre: {
+        image: 'Image/couverture-20-1.png',
+        music: 'Audio/running-on-concrete-268478.mp3',
+        lines: {
+          fr: [
+            "La silhouette prend la fuite comme si elle savait ce que vous êtes au-delà même de votre identité...",
+            "Tout ce que vous pouvez apercevoir est une aberration chromatique fuyante le long d'une route."
+          ],
+          en: [
+            'As soon as you get closer, the silhouette runs away,',
+            'as if it knew what you were beyond your identity... All you can see is a chromatic aberration streaking along a road.'
+          ]
+        },
+        choices: [
+          { label: { fr: 'Choix 1', en: 'Choice 1' }, next: 'poussiere', alt: true },
+          { label: { fr: 'Choix 2', en: 'Choice 2' }, next: 'tele', alt: true }
+        ]
+      },
+      sortie: {
+        image: 'Image/couverture-12-1.png',
+        music: 'Audio/horror-background-atmosphere-06-199279.mp3',
+        lines: {
+          fr: [
+            'À force de courir, votre vue se trouble.',
+            "Mais vous n'êtes pas fou !",
+            "C'est bien une sortie !",
+            "Absorbée par la profondeur de la nuit,",
+            'vous vous précipitez et manquez de peu de trébucher sur quelques marches.'
+          ],
+          en: [
+            'From running, your vision becomes blurred.',
+            "But you're not crazy!",
+            "It is definitely an exit!",
+            'Absorbed by the depth of night,',
+            'you rush forward and narrowly miss tripping on some steps.'
+          ]
+        },
+        choices: [ { label: { fr: 'Sortir', en: 'Go out' }, next: 'startbis', alt: true } ]
+      },
+      startbis: {
+        image: 'Image/couverture-2-1.png',
+        music: 'Audio/street-noise-24118.mp3',
+        lines: {
+          fr: [
+            'Vous êtes à nouveau dans cette rue.',
+            'Mais cette fois, vous savez que vous êtes cette silhouette indéterminée.',
+            'Et par peur de causer plus de dommage,',
+            'vous fuyez sans vous retourner :',
+            "Cela vous prendra la nuit pour y croire.",
+            'Fin — la boucle précipitée'
+          ],
+          en: [
+            'You are on this street again.',
+            'But this time, you know you are that indeterminate figure.',
+            'And for fear of causing more damage,',
+            'you run away without looking back:',
+            'It will take you all night to believe it.',
+            'END — THE RUSHED LOOP'
+          ]
+        },
+        choices: [ { label: { fr: 'Recommencer', en: 'Start again' }, next: 'start' } ]
+      },
+      dead: {
+        image: 'Image/gameover.png',
+        music: 'Audio/8-bit-horror-noises-63944.mp3',
+        lines: {
+          fr: [
+            "Les mains vous rattrapent et vous sombrez dans l'abîme.",
+            'Vous pouvez recommencer une partie,',
+            "Après tout la mort n'est qu'un concept ici bas..."
+          ],
+          en: [
+            'Hands catch you... You sink into the abyss.',
+            'You can restart the game.',
+            'After all, death is just a concept here...'
+          ]
+        },
+        choices: [ { label: { fr: 'Recommencer', en: 'Start again' }, next: 'start', alt: true } ]
+      },
+      poussiere: {
+        image: 'Image/couverture-4-1.png',
+        music: 'Audio/horror-wind-308763.mp3',
+        lines: {
+          fr: [
+            "La silhouette court mais elle s'essouffle avant vous, puisque vous vous êtes habitué à cet air chaud étouffant.",
+            "Dans votre élan, vous essayez de l'attraper mais elle s'échappe entre vos doigts.",
+            "Vous parvenez tout de même à l'effleurer, et ainsi fait, ",
+            'une forme inconnue s\'élève dans les cieux, aspirant la noirceur de la nuit.',
+            'Ce manifeste du vide se déplace, sous forme de poussière, au gré du léger vent sec.'
+          ],
+          en: [
+            'The figure runs but runs out of breath before you, since you are used to this stifling hot air.',
+            'In your momentum, you try to catch it but it slips through your fingers.',
+            'You still manage to touch it, and so done,',
+            'an unknown form rises in the skies, sucking in the darkness of the night.',
+            'This manifesto of emptiness moves, in the form of dust, at the mercy of the slight dry wind.'
+          ]
+        },
+        choices: [
+          { label: { fr: 'Observer passivement le spectacle', en: 'Passively observe the show' }, next: 'bercer', alt: true },
+          { label: { fr: "Interagir avec l'objet flottant", en: 'Interact with the floating object' }, next: 'interagir', alt: true }
+        ]
+      },
+      tele: {
+        image: 'Image/couverture-10-1.png',
+        music: 'Audio/soothing-white-noise-323619.mp3',
+        lines: {
+          fr: [
+            'Vous ne courez pas assez vite, le souffle vous manque.',
+            'Ainsi que vos repères :',
+            "Le ciel s'éclaircit sans que le jour ne se lève.",
+            'Vous avez perdu la silhouette de vue.'
+          ],
+          en: [
+            "You're not running fast enough, you're out of breath...",
+            '...As well as your bearings:',
+            'The sky clears without daylight breaking.',
+            'You have lost sight of the silhouette.'
+          ]
+        },
+        choices: [
+          { label: { fr: 'Descendre dans le souterrain', en: 'Go down underground' }, next: 'lumiere', alt: true },
+          { label: { fr: "Se laisser bercer par l'éclaircie d'une télévision VHS", en: 'Be lulled by the new clarity of a VHS TV' }, next: 'bercer', alt: true }
+        ]
+      },
+      bercer: {
+        image: 'Image/couverture-16-1.png',
+        music: 'Audio/8-bit-horror-noises-63944.mp3',
+        lines: {
+          fr: [
+            "Le ciel ne s'éclaircit plus.",
+            'Des masses blanches hésitantes entre un état vaporeux et consistant viennent compléter la composition picturale de...',
+            'votre mort ?'
+          ],
+          en: [
+            'The sky is no longer clearing.',
+            'White masses, hovering between a vaporous and solid state, complete the pictorial composition of...',
+            'your death?'
+          ]
+        },
+        choices: [ { label: { fr: 'Recommencer', en: 'Start over' }, next: 'start', alt: true } ]
+      },
+      interagir: {
+        image: 'Image/couverture-6-1.png',
+        music: 'Audio/unsettled-233608.mp3',
+        lines: {
+          fr: [
+            'Vous touchez la poussière noire.',
+            'Elle se déforme instantanément au contact :',
+            "elle s'évapore soudainement, teintant de nouveau le ciel de son obscurité première comme s'il n'avait jamais connu d'autres couleurs que celle de la nuit.",
+            'Entre les ombres, vous discernez une ligne, inatteignable.',
+            "En la suivant du regard, vous vous rendez compte que vous n'êtes pas seul à fixer cette dernière.",
+            'Non.',
+            "Ce n'est pas l'étrange écho de vous-même sous forme de silhouette.",
+            'Mais une machine de vision.'
+          ],
+          en: [
+            'You touch the black dust.',
+            'As soon as you get in contact with it, it deforms instantly.',
+            'It suddenly evaporates, tinting the sky again with its original darkness as if it had never known any other colors than that of night.',
+            'Between the shadows, you discern a line, unreachable.',
+            "As you follow it with your gaze, you realize you're not the only one scrutinizing it.",
+            'No.',
+            "It is not a strange echo of yourself in silhouette form.",
+            'But a vision machine.'
+          ]
+        },
+        choices: [ { label: { fr: 'Utiliser la machine', en: 'Use the machine' }, next: 'machine', alt: true } ]
+      },
+      machine: {
+        image: 'Image/couverture-14-1.png',
+        music: 'Audio/unsettled-233608.mp3',
+        lines: {
+          fr: [
+            "Vous vous penchez vers l'appareil, et observez ce qu'il se trouve avant l'horizon.",
+            'Votre regard semble vide, perdu dans les ténèbres.',
+            'Mais au loin, une trace de présence.',
+            'À cette vue, tout votre corps se fige : vous ne pouvez détourner les yeux.',
+            'Devant vous se dresse la représentation de ██████.'
+          ],
+          en: [
+            'You lean toward the camera and observe what lies before the horizon.',
+            'Your gaze seems empty, lost in the darkness.',
+            'But in the distance, a trace of a presence!',
+            "At this sight, your whole body freezes: you can't look away.",
+            'Before you stands the image of ██████.'
+          ]
+        },
+        choices: [ { label: { fr: 'Recommencer', en: 'Start again' }, next: 'start', alt: true } ]
+      }
+    };
+
+    // ---------------------- Sélecteurs ----------------------
+    const imgEl = document.getElementById('scene');
+    const dialog = document.getElementById('dialog');
+    const textEl = document.getElementById('typeText');
+    const choicesEl = document.getElementById('choices');
+    const hint = document.getElementById('hint');
+
+    const htmlAudio = document.getElementById('bgm');
+    const gate = document.getElementById('gate');
+    const gateBtn = document.getElementById('gateBtn');
+
+    // ---------------------- i18n helpers ----------------------
+    let lang = (localStorage.getItem('lang') || ((navigator.language||'').toLowerCase().startsWith('fr') ? 'fr' : 'en'));
+    function t(fr, en){ return lang === 'fr' ? fr : en; }
+    function setLang(next){ lang = next; localStorage.setItem('lang', lang); updateLangUI(); go(cur); }
+    function updateLangUI(){
+      document.getElementById('btnFR')?.classList.toggle('alt', lang !== 'fr');
+      document.getElementById('btnEN')?.classList.toggle('alt', lang !== 'en');
+      if(hint){ hint.textContent = t('[▶] = afficher la ligne / avancer', '[▶] = show line / advance'); }
+      document.getElementById('speaker').textContent = t('NARRATEUR', 'NARRATOR');
+      document.documentElement.lang = lang;
+    }
+    document.getElementById('btnFR')?.addEventListener('click', ()=> setLang('fr'));
+    document.getElementById('btnEN')?.addEventListener('click', ()=> setLang('en'));
+
+    // ---------------------- Audio Manager (Web Audio) ----------------------
+    class AudioManager{
+      constructor(){ this.ctx=null; this.cache=new Map(); this.current=null; this.master=null; }
+      async unlock(){
+        if(!this.ctx){
+          const AC = window.AudioContext || window.webkitAudioContext;
+          if(!AC) return false;
+          this.ctx = new AC();
+          this.master = this.ctx.createGain();
+          this.master.gain.value = 1;
+          this.master.connect(this.ctx.destination);
+        }
+        if(this.ctx.state === 'suspended') await this.ctx.resume();
+        return true;
+      }
+      async load(url){
+        if(this.cache.has(url)) return this.cache.get(url);
+        const res = await fetch(url);
+        const arr = await res.arrayBuffer();
+        const buf = await this.ctx.decodeAudioData(arr);
+        this.cache.set(url, buf);
+        return buf;
+      }
+      async play(url, fade=0.6){
+        if(!url) return;
+        const ok = await this.unlock();
+        if(!ok) return;
+        const buf = await this.load(url);
+        const src = this.ctx.createBufferSource();
+        src.buffer = buf; src.loop = true;
+        const g = this.ctx.createGain(); g.gain.value = 0; // start silent
+        src.connect(g); g.connect(this.master); src.start(0);
+
+        const now = this.ctx.currentTime;
+        g.gain.cancelScheduledValues(now);
+        g.gain.setValueAtTime(0, now);
+        g.gain.linearRampToValueAtTime(1, now + fade);
+
+        if(this.current){
+          const old = this.current; const og = old.gain; const os = old.src;
+          og.gain.cancelScheduledValues(now);
+          og.gain.setValueAtTime(og.gain.value, now);
+          og.gain.linearRampToValueAtTime(0, now + fade);
+          setTimeout(()=>{ try{ os.stop(); }catch{} }, fade*1000 + 80);
+        }
+        this.current = { src, gain: g };
+      }
+    }
+    const audioMgr = new AudioManager();
+
+    // Fallback: si WebAudio indisponible, on garde <audio> unique et on change src
+    async function playViaHtmlAudio(url){
+      try{
+        if(!url) return;
+        htmlAudio.src = url; htmlAudio.loop = true;
+        await htmlAudio.play(); htmlAudio.muted = false;
+      }catch{}
+    }
+
+    // Première autorisation une seule fois
+    const AUDIO_KEY = 'audio-ok';
+    const audioOk = localStorage.getItem(AUDIO_KEY) === '1';
+
+    async function enableAudioOnce(scene){
+      const ok = await audioMgr.unlock();
+      if(ok){ await audioMgr.play(scene.music); }
+      else { await playViaHtmlAudio(scene.music); }
+      localStorage.setItem(AUDIO_KEY, '1');
+      gate.style.display='none';
+      window.removeEventListener('pointerdown', unlockOnGesture);
+      window.removeEventListener('keydown', unlockOnGesture);
+    }
+    function unlockOnGesture(){ enableAudioOnce(SCENES[cur]); }
+
+    if(!audioOk){ gate.style.display='flex'; }
+    gateBtn?.addEventListener('click', ()=> enableAudioOnce(SCENES['start']));
+    window.addEventListener('pointerdown', unlockOnGesture);
+    window.addEventListener('keydown', unlockOnGesture);
+
+    // ---------------------- Mesure HUD + vh ----------------------
+    function setVhVar(){ const vh = window.innerHeight * 0.01; document.documentElement.style.setProperty('--vh', vh + 'px'); }
+    function setHudHeight(){ const h = Math.ceil(dialog.getBoundingClientRect().height + 12 + 16); document.documentElement.style.setProperty('--hudH', h + 'px'); }
+
+    // ---------------------- Router (SPA) ----------------------
+    let cur = 'start', lineIdx=0, typing=false, skip=false; const SPEED=40;
+
+    function renderChoices(scene){
+      choicesEl.innerHTML = '';
+      (scene.choices||[]).forEach(ch => {
+        const b = document.createElement('button');
+        b.className = 'btn' + (ch.alt ? ' alt':'');
+        const label = (typeof ch.label === 'string') ? ch.label : (ch.label?.[lang] || ch.label?.fr || ch.label?.en || '');
+        b.textContent = (ch.alt? '▶ ':'▶ ') + label;
+        b.addEventListener('click', ()=> go(ch.next));
+        choicesEl.appendChild(b);
+      });
+      choicesEl.hidden = !scene.choices || scene.choices.length===0;
+      setHudHeight();
+    }
+
+    function typeLines(lines){
+      const beep = new Audio('Audio/bip.mp3');
+      beep.volume = 0.06;
+      lineIdx = 0; textEl.textContent='';
+
+      let nextBtn = document.getElementById('nextBtn');
+      if(!nextBtn){
+        nextBtn = document.createElement('button');
+        nextBtn.id = 'nextBtn';
+        nextBtn.textContent = '▶';
+        nextBtn.className = 'btn';
+        nextBtn.style.marginTop = '8px';
+        nextBtn.style.maxWidth = '100%';
+        nextBtn.style.boxSizing = 'border-box';
+        dialog.querySelector('.bar').appendChild(nextBtn);
+      }
+      nextBtn.style.display = 'inline-block';
+
+      const next = () => {
+        // Sélectionne la bonne liste selon la langue
+        const L = Array.isArray(lines) ? lines : (lines?.[lang] || lines?.fr || lines?.en || []);
+        if (lineIdx >= L.length){
+          nextBtn.style.display = 'none';
+          renderChoices(SCENES[cur]);
+          return;
+        }
+        typing = true; skip=false; hint.style.visibility='visible'; textEl.textContent='';
+        let i=0; const s = L[lineIdx] || '';
+        let charCount = 0;
+        const tick=()=>{
+          setHudHeight();
+          if (skip){ textEl.textContent=s; typing=false; hint.style.visibility='hidden'; proceedOrShowButton(L); return; }
+          if (i < s.length){
+            textEl.textContent += s[i];
+            if (/\w/.test(s[i])) { // seulement lettres/chiffres
+              charCount++;
+              if (charCount % 3 === 0) { // bip toutes les 3 lettres (agréable à haute vitesse)
+                try { beep.currentTime = 0; beep.play(); } catch {}
+              }
+            }
+            i++;
+            setTimeout(tick, SPEED);
+          }
+          else { typing=false; hint.style.visibility='hidden'; proceedOrShowButton(L); }
+        };
+        tick();
+      };
+
+      function proceedOrShowButton(L){
+        // Si c'était la dernière phrase, passer directement aux choix
+        if (lineIdx >= (L.length - 1)){
+          lineIdx = L.length;
+          next();
+        } else {
+          nextBtn.style.display = 'inline-block';
+          nextBtn.onclick = () => {
+            if (typing) { skip = true; } else { lineIdx++; next(); }
+          };
+        }
+      }
+
+      document.addEventListener('keydown', function advance(e){
+        if (typing && (e.key===' ' || e.key==='Spacebar')){ skip = true; }
+        else if (!typing && (e.key===' ' || e.key==='Spacebar')){ document.removeEventListener('keydown', advance); lineIdx++; next(); }
+      });
+
+      next();
+    }
+
+    async function handleSceneAudio(scene){
+      if(localStorage.getItem(AUDIO_KEY) === '1'){
+        try{ await audioMgr.play(scene.music); }
+        catch{ await playViaHtmlAudio(scene.music); }
+      } else {
+        try{ htmlAudio.src = scene.music; htmlAudio.load(); }catch{}
+      }
+    }
+
+    function go(id){
+      cur = id in SCENES ? id : 'start';
+      const scene = SCENES[cur];
+      imgEl.src = scene.image;
+      handleSceneAudio(scene);
+      choicesEl.innerHTML = '';
+      choicesEl.hidden = true;
+      typeLines(scene.lines||[]);
+    }
+
+    document.addEventListener('keydown', (e)=>{
+      if (e.key===' ' || e.key==='Spacebar'){ e.preventDefault(); if (typing) skip=true; }
+    });
+
+    // Boot
+    function boot(){ setVhVar(); setHudHeight(); updateLangUI(); go('start'); }
+    if (document.readyState==='complete' || document.readyState==='interactive') boot(); else document.addEventListener('DOMContentLoaded', boot);
+    window.addEventListener('resize', ()=>{ setVhVar(); setHudHeight(); });
+    if (window.visualViewport){ window.visualViewport.addEventListener('resize', ()=>{ setVhVar(); setHudHeight(); }); }
+  })();
+  </script>
+</body>
+</html>
